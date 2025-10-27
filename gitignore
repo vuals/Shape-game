@@ -1,1 +1,19 @@
+# Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+
+# VSCode settings
+.vscode/
+
+# Other temporary files
+*.swp
+*.swo
+*.log
+*.tmp
 
