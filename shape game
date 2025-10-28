@@ -177,7 +177,7 @@ class GeometricEnemy:
         if shape_type == 'triangle':
             self.sides = 3
             self.color = RED
-            self.speed = 2
+            self.speed = 2.5
             self.health = 1
         elif shape_type == 'square':
             self.sides = 4
@@ -502,10 +502,10 @@ class GeometricAsteroids:
         self.boss = None  # reset
         self.boss_projectiles = []
         
-        # Boss every 3 waves
-        if self.wave % 3 == 0:
-            # boss_index counts: wave 3 => index 1, wave 6 => 2, ...
-            boss_index = self.wave // 3
+        # Boss on every 4th wave (i.e. 3 normal waves then a boss)
+        if self.wave % 4 == 0:
+            # boss_index counts: wave 4 => index 1, wave 8 => 2, ...
+            boss_index = self.wave // 4
             # Spawn boss slightly off-screen so it enters play area
             self.boss = BossEnemy(WIDTH // 2, -150, boss_index)
             return
@@ -659,6 +659,8 @@ class GeometricAsteroids:
                         # Boss defeated!
                         bonus = 1200 + (self.boss.boss_index * 800)
                         self.score += bonus
+                        # advance to next wave so we don't repeatedly spawn the same boss
+                        self.wave += 1
                         self.wave_complete = True
                         self.wave_timer = 200
                         # Explosion effect at boss location
