@@ -545,6 +545,8 @@ class GeometricAsteroids:
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
         self.prev_s = False
+        # Debug helpers: enable keys to jump waves and unlock ships for testing
+        self.debug_mode = True
         self.reset_game()
     
     def reset_game(self):
@@ -583,15 +585,61 @@ class GeometricAsteroids:
         if self.wave % 4 == 0:
             self.boss = BossEnemy(WIDTH // 2, -150, self.wave // 4)
             return
-        
+        # Threat-based spawning to create diverse enemy roles and avoid pure crowding
         shape_types = ['triangle', 'square', 'pentagon', 'hexagon']
-        for _ in range(3 + self.wave * 2):
+
+        # threat points determine how many and which enemies to spawn
+        threat = max(4, 3 + self.wave * 2)
+        max_enemies = min(6 + self.wave * 2, 30)
+
+        # role costs and progressive availability
+        role_cost = {'chaser': 1, 'swarm': 1, 'dasher': 2, 'turret': 2, 'shield': 3}
+
+        def role_weights_for_wave(w):
+            # Early waves: mostly chasers and swarmers
+            if w <= 2:
+                return {'chaser': 70, 'swarm': 30, 'dasher': 0, 'turret': 0, 'shield': 0}
+            if w <= 4:
+                return {'chaser': 50, 'swarm': 25, 'dasher': 20, 'turret': 5, 'shield': 0}
+            if w <= 7:
+                return {'chaser': 35, 'swarm': 20, 'dasher': 25, 'turret': 15, 'shield': 5}
+            # later waves: more mixed with turrets and shields
+            return {'chaser': 25, 'swarm': 15, 'dasher': 25, 'turret': 20, 'shield': 15}
+
+        weights = role_weights_for_wave(self.wave)
+        roles = list(weights.keys())
+        weights_list = [weights[r] for r in roles]
+
+        while threat > 0 and len(self.enemies) < max_enemies:
+            # pick a role according to weights
+            role = random.choices(roles, weights_list, k=1)[0]
+            cost = role_cost.get(role, 1)
+            if cost > threat:
+                # fallback to cheaper role
+                role = 'chaser'
+                cost = 1
+
+            # spawn position at a random edge
             side = random.randint(0, 3)
             positions = [(random.randint(0, WIDTH), -50), (WIDTH + 50, random.randint(0, HEIGHT)),
-                        (random.randint(0, WIDTH), HEIGHT + 50), (-50, random.randint(0, HEIGHT))]
+                         (random.randint(0, WIDTH), HEIGHT + 50), (-50, random.randint(0, HEIGHT))]
             x, y = positions[side]
+
+            # pick a shape type; later waves unlock more complex shapes
             shape_type = random.choice(shape_types[:min(len(shape_types), 1 + self.wave // 2)])
-            self.enemies.append(GeometricEnemy(x, y, shape_type, random.randint(20, 40)))
+
+            # size scaled by role (swarm small, shield big)
+            if role == 'swarm':
+                size = random.randint(14, 24)
+            elif role == 'turret':
+                size = random.randint(22, 36)
+            elif role == 'shield':
+                size = random.randint(30, 44)
+            else:
+                size = random.randint(18, 36)
+
+            self.enemies.append(GeometricEnemy(x, y, shape_type, size, role=role))
+            threat -= cost
     
     def handle_input(self):
         if self.shop_open: return
@@ -652,7 +700,10 @@ class GeometricAsteroids:
                     except ValueError: pass
         
         for enemy in self.enemies:
-            enemy.update(self.player.x, self.player.y)
+            spawned = enemy.update(self.player.x, self.player.y)
+            if spawned:
+                # enemy-fired bullets are handled with boss_projectiles list (hostile projectiles)
+                self.boss_projectiles.extend(spawned)
         
         if self.boss:
             self.boss.update(self.player.x, self.player.y, self.enemies, self.boss_projectiles)
@@ -811,6 +862,17 @@ class GeometricAsteroids:
         if self.shop_open:
             self.draw_shop_overlay()
             
+        # Debug HUD
+        if getattr(self, 'debug_mode', False):
+            dbg_lines = [
+                "Debug: Ctrl+Up/Ctrl+Down change wave (Ctrl+Shift for ±5)",
+                "Press 1..4 to unlock ships (Shift+number to equip). 0 = unlock all"
+            ]
+            y = 10
+            for line in dbg_lines:
+                surf = self.small_font.render(line, True, (200, 200, 100))
+                self.screen.blit(surf, (WIDTH - surf.get_width() - 10, y))
+                y += 20
         pygame.display.flip()
     
     def draw_shop_overlay(self):
@@ -910,6 +972,54 @@ class GeometricAsteroids:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE and self.game_over:
                         self.reset_game()
+                    # Debug shortcuts (always available when debug_mode True)
+                    if getattr(self, 'debug_mode', False):
+                        mods = pygame.key.get_mods()
+                        # Ctrl + Up/Down to change wave by 1; Ctrl+Shift+Up/Down to change by 5
+                        if mods & pygame.KMOD_CTRL:
+                            if event.key == pygame.K_UP:
+                                delta = 5 if (mods & pygame.KMOD_SHIFT) else 1
+                                self.wave = max(1, self.wave + delta)
+                                self.spawn_wave()
+                            elif event.key == pygame.K_DOWN:
+                                delta = 5 if (mods & pygame.KMOD_SHIFT) else 1
+                                self.wave = max(1, self.wave - delta)
+                                self.spawn_wave()
+                        # Number keys to unlock ships: 1..4 map to shop items defined in reset_game
+                        if event.key == pygame.K_1:
+                            if 'interceptor' not in self.owned_ships:
+                                self.owned_ships.append('interceptor')
+                            # Shift+1 to immediately equip
+                            if mods & pygame.KMOD_SHIFT:
+                                old_lives = self.player.lives
+                                self.player = Player('interceptor')
+                                self.player.lives = old_lives
+                        elif event.key == pygame.K_2:
+                            if 'tank' not in self.owned_ships:
+                                self.owned_ships.append('tank')
+                            if mods & pygame.KMOD_SHIFT:
+                                old_lives = self.player.lives
+                                self.player = Player('tank')
+                                self.player.lives = old_lives
+                        elif event.key == pygame.K_3:
+                            if 'shotgun' not in self.owned_ships:
+                                self.owned_ships.append('shotgun')
+                            if mods & pygame.KMOD_SHIFT:
+                                old_lives = self.player.lives
+                                self.player = Player('shotgun')
+                                self.player.lives = old_lives
+                        elif event.key == pygame.K_4:
+                            if 'sniper' not in self.owned_ships:
+                                self.owned_ships.append('sniper')
+                            if mods & pygame.KMOD_SHIFT:
+                                old_lives = self.player.lives
+                                self.player = Player('sniper')
+                                self.player.lives = old_lives
+                        elif event.key == pygame.K_0:
+                            # unlock all
+                            for it in self.shop_items:
+                                if it['id'] not in self.owned_ships:
+                                    self.owned_ships.append(it['id'])
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1 and self.shop_open:
                         mx, my = event.pos
