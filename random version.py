@@ -22,24 +22,54 @@ BLUE = (50, 150, 255)
 GRAY = (150, 150, 150)
 
 class Player:
-    def __init__(self):
+    def __init__(self, ship_type='basic'):
         self.x = WIDTH // 2
         self.y = HEIGHT // 2
         self.angle = 0
         self.vel_x = 0
         self.vel_y = 0
-        self.acceleration = 0.3
-        self.friction = 0.98
-        self.max_speed = 8
-        self.damage = 1
-        self.radius = 12
+        self.ship_type = ship_type
+        self.setup_ship_stats()
         self.shoot_cooldown = 0
-        self.default_shoot_delay = 10
-        self.shoot_delay = self.default_shoot_delay
         self.lives = 3
         self.invulnerable = 0
         self.weapon_type = 'normal'
         self.weapon_timer = 0
+    
+    def setup_ship_stats(self):
+        ships = {
+            'basic': {
+                'name': 'Fighter', 'color': CYAN, 'accel': 0.3, 'friction': 0.98, 
+                'max_speed': 7, 'damage': 1, 'shoot_delay': 13, 'ability': None
+            },
+            'interceptor': {
+                'name': 'Interceptor', 'color': GREEN, 'accel': 0.4, 'friction': 0.97,
+                'max_speed': 15, 'damage': .75, 'shoot_delay': 4, 'ability': 'rapid'
+            },
+            'tank': {
+                'name': 'Tank', 'color': ORANGE, 'accel': 0.25, 'friction': 0.99,
+                'max_speed': 3, 'damage': 5, 'shoot_delay': 22, 'ability': 'heavy'
+            },
+            'shotgun': {
+                'name': 'Shotgun', 'color': RED, 'accel': 0.3, 'friction': 0.98,
+                'max_speed': 8, 'damage': 1, 'shoot_delay': 17, 'ability': 'spread'
+            },
+            'sniper': {
+                'name': 'Sniper', 'color': PURPLE, 'accel': 0.32, 'friction': 0.98,
+                'max_speed': 6, 'damage': 10, 'shoot_delay': 40, 'ability': 'pierce'
+            }
+        }
+        stats = ships[self.ship_type]
+        self.ship_name = stats['name']
+        self.ship_color = stats['color']
+        self.acceleration = stats['accel']
+        self.friction = stats['friction']
+        self.max_speed = stats['max_speed']
+        self.damage = stats['damage']
+        self.default_shoot_delay = stats['shoot_delay']
+        self.shoot_delay = self.default_shoot_delay
+        self.special_ability = stats['ability']
+        self.radius = 12
         
     def rotate(self, direction):
         self.angle += direction * 5
@@ -84,20 +114,66 @@ class Player:
             return
         
         rad = math.radians(self.angle)
-        front_x = self.x + math.cos(rad) * self.radius
-        front_y = self.y + math.sin(rad) * self.radius
-        back_left_x = self.x + math.cos(rad + 2.5) * self.radius
-        back_left_y = self.y + math.sin(rad + 2.5) * self.radius
-        back_right_x = self.x + math.cos(rad - 2.5) * self.radius
-        back_right_y = self.y + math.sin(rad - 2.5) * self.radius
         
-        color = CYAN
-        if self.weapon_type == 'spread': color = YELLOW
-        elif self.weapon_type == 'rapid': color = MAGENTA
+        # Color changes with powerups
+        if self.weapon_type == 'spread':
+            color = YELLOW
+        elif self.weapon_type == 'rapid':
+            color = MAGENTA
+        else:
+            color = self.ship_color
         
-        pygame.draw.polygon(screen, color, [(front_x, front_y), (back_left_x, back_left_y), 
-                                            (self.x, self.y), (back_right_x, back_right_y)], 2)
+        # Different ship designs
+        if self.ship_type == 'basic':
+            # Standard triangle
+            front = (self.x + math.cos(rad) * self.radius, self.y + math.sin(rad) * self.radius)
+            back_left = (self.x + math.cos(rad + 2.5) * self.radius, self.y + math.sin(rad + 2.5) * self.radius)
+            back_right = (self.x + math.cos(rad - 2.5) * self.radius, self.y + math.sin(rad - 2.5) * self.radius)
+            pygame.draw.polygon(screen, color, [front, back_left, (self.x, self.y), back_right], 2)
+            
+        elif self.ship_type == 'interceptor':
+            # Sleek arrow with wings
+            front = (self.x + math.cos(rad) * (self.radius + 4), self.y + math.sin(rad) * (self.radius + 4))
+            back_left = (self.x + math.cos(rad + 2.8) * self.radius, self.y + math.sin(rad + 2.8) * self.radius)
+            back_right = (self.x + math.cos(rad - 2.8) * self.radius, self.y + math.sin(rad - 2.8) * self.radius)
+            pygame.draw.polygon(screen, color, [front, back_left, back_right], 2)
+            # Speed lines
+            pygame.draw.line(screen, color, (self.x, self.y), front, 1)
+            
+        elif self.ship_type == 'tank':
+            # Wide heavy ship
+            front = (self.x + math.cos(rad) * self.radius, self.y + math.sin(rad) * self.radius)
+            back_left = (self.x + math.cos(rad + 2.2) * (self.radius + 3), self.y + math.sin(rad + 2.2) * (self.radius + 3))
+            back_right = (self.x + math.cos(rad - 2.2) * (self.radius + 3), self.y + math.sin(rad - 2.2) * (self.radius + 3))
+            pygame.draw.polygon(screen, color, [front, back_left, (self.x, self.y), back_right], 3)
+            # Armor plates
+            mid_left = (self.x + math.cos(rad + 1.8) * self.radius, self.y + math.sin(rad + 1.8) * self.radius)
+            mid_right = (self.x + math.cos(rad - 1.8) * self.radius, self.y + math.sin(rad - 1.8) * self.radius)
+            pygame.draw.line(screen, color, mid_left, mid_right, 2)
+            
+        elif self.ship_type == 'shotgun':
+            # Wide barrel design
+            front = (self.x + math.cos(rad) * self.radius, self.y + math.sin(rad) * self.radius)
+            back_left = (self.x + math.cos(rad + 2.4) * self.radius, self.y + math.sin(rad + 2.4) * self.radius)
+            back_right = (self.x + math.cos(rad - 2.4) * self.radius, self.y + math.sin(rad - 2.4) * self.radius)
+            pygame.draw.polygon(screen, color, [front, back_left, (self.x, self.y), back_right], 2)
+            # Multiple barrels
+            for offset in [-0.5, 0.5]:
+                barrel = (self.x + math.cos(rad + offset) * (self.radius - 2), 
+                         self.y + math.sin(rad + offset) * (self.radius - 2))
+                pygame.draw.circle(screen, color, (int(barrel[0]), int(barrel[1])), 2)
+                
+        elif self.ship_type == 'sniper':
+            # Long narrow design
+            front = (self.x + math.cos(rad) * (self.radius + 6), self.y + math.sin(rad) * (self.radius + 6))
+            back_left = (self.x + math.cos(rad + 3.0) * (self.radius - 2), self.y + math.sin(rad + 3.0) * (self.radius - 2))
+            back_right = (self.x + math.cos(rad - 3.0) * (self.radius - 2), self.y + math.sin(rad - 3.0) * (self.radius - 2))
+            pygame.draw.polygon(screen, color, [front, back_left, back_right], 2)
+            # Scope
+            scope = (self.x + math.cos(rad) * (self.radius + 2), self.y + math.sin(rad) * (self.radius + 2))
+            pygame.draw.circle(screen, color, (int(scope[0]), int(scope[1])), 3, 1)
         
+        # Thruster
         if abs(self.vel_x) > 0.5 or abs(self.vel_y) > 0.5:
             back_x = self.x - math.cos(rad) * self.radius * 0.8
             back_y = self.y - math.sin(rad) * self.radius * 0.8
@@ -114,6 +190,8 @@ class Bullet:
         self.owner = owner
         self.color = WHITE if owner == 'player' else RED
         self.damage = damage
+        self.pierce = False
+        self.pierce_count = 0
         
     def update(self):
         self.x += self.vel_x
@@ -349,18 +427,29 @@ class GeometricAsteroids:
         self.reset_game()
     
     def reset_game(self):
-        self.player = Player()
+        # Preserve ship type if already selected
+        ship_type = self.player.ship_type if hasattr(self, 'player') else 'basic'
+        self.player = Player(ship_type)
+        
         self.bullets, self.enemies, self.powerups, self.particles, self.boss_projectiles = [], [], [], [], []
         self.boss = None
         self.score, self.coins, self.wave = 0, 0, 1
         self.game_over, self.wave_complete, self.shop_open = False, False, False
         self.wave_timer = 0
-        self.owned_upgrades = {}
+        
+        # Track owned ships
+        if not hasattr(self, 'owned_ships'):
+            self.owned_ships = ['basic']
+        
         self.shop_items = [
-            {'id': 'speed', 'name': 'Increase Speed', 'cost': 150, 'desc': '+1 max speed'},
-            {'id': 'damage', 'name': 'Increase Damage', 'cost': 200, 'desc': '+1 bullet damage'},
-            {'id': 'firerate', 'name': 'Faster Fire', 'cost': 180, 'desc': '-1 shoot delay'},
-            {'id': 'life', 'name': 'Extra Life', 'cost': 250, 'desc': '+1 life'}
+            {'id': 'interceptor', 'name': 'Interceptor', 'cost': 1500, 
+             'desc': 'Fast & rapid fire', 'stats': 'Speed: ★★★ | Fire Rate: ★★★'},
+            {'id': 'tank', 'name': 'Heavy Tank', 'cost': 2300, 
+             'desc': 'Slow but powerful', 'stats': 'Damage: ★★★ | Armor: ★★★'},
+            {'id': 'shotgun', 'name': 'Shotgun Ship', 'cost': 3000, 
+             'desc': '5-way spread shot', 'stats': 'Spread: ★★★★★ | Range: ★★'},
+            {'id': 'sniper', 'name': 'Sniper Class', 'cost': 5000, 
+             'desc': 'Pierce & high damage', 'stats': 'Damage: ★★★★★ | Pierce: Yes'}
         ]
         self.shop_rects = []
         self.spawn_wave()
@@ -407,12 +496,26 @@ class GeometricAsteroids:
         self.player.shoot_delay = delays.get(self.player.weapon_type, self.player.default_shoot_delay)
         self.player.shoot()
         
-        if self.player.weapon_type == 'spread':
-            for offset in [-15, 0, 15]:
+        # Ship ability-based shooting
+        if self.player.special_ability == 'spread' or self.player.weapon_type == 'spread':
+            # 5-way spread
+            for offset in [-30, -15, 0, 15, 30]:
                 self.bullets.append(Bullet(self.player.x, self.player.y, self.player.angle + offset, 
-                                          10, 'player', self.player.damage))
+                                          9, 'player', self.player.damage))
+        elif self.player.special_ability == 'heavy':
+            # Single heavy shot
+            bullet = Bullet(self.player.x, self.player.y, self.player.angle, 8, 'player', self.player.damage)
+            bullet.radius = 5
+            self.bullets.append(bullet)
+        elif self.player.special_ability == 'pierce':
+            # Piercing bullet
+            bullet = Bullet(self.player.x, self.player.y, self.player.angle, 14, 'player', self.player.damage)
+            bullet.pierce = True
+            bullet.pierce_count = 3
+            self.bullets.append(bullet)
         else:
-            speed = 15 if self.player.weapon_type == 'rapid' else 10
+            # Normal or rapid
+            speed = 15 if self.player.weapon_type == 'rapid' or self.player.special_ability == 'rapid' else 10
             self.bullets.append(Bullet(self.player.x, self.player.y, self.player.angle, 
                                       speed, 'player', self.player.damage))
     
@@ -456,8 +559,16 @@ class GeometricAsteroids:
         for bullet in self.bullets[:]:
             for enemy in self.enemies[:]:
                 if math.sqrt((bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2) < enemy.size:
-                    try: self.bullets.remove(bullet)
-                    except ValueError: pass
+                    # Pierce check
+                    can_remove = True
+                    if hasattr(bullet, 'pierce') and bullet.pierce and bullet.pierce_count > 0:
+                        bullet.pierce_count -= 1
+                        can_remove = False
+                    
+                    if can_remove:
+                        try: self.bullets.remove(bullet)
+                        except ValueError: pass
+                    
                     if enemy.hit(bullet.damage):
                         self.score += enemy.sides * 10
                         self.coins += enemy.coin_value
@@ -468,7 +579,9 @@ class GeometricAsteroids:
                         self.enemies.extend(enemy.split())
                         if random.random() < 0.1:
                             self.powerups.append(PowerUp(enemy.x, enemy.y, random.choice(['spread', 'rapid', 'life'])))
-                    break
+                    
+                    if can_remove:
+                        break
         
         # Boss projectile collision
         for bproj in self.boss_projectiles[:]:
@@ -544,7 +657,8 @@ class GeometricAsteroids:
             (f"Wave: {self.wave}", CYAN, 35),
             (f"Lives: {self.player.lives}", GREEN, 60),
             (f"Coins: {self.coins}", YELLOW, 85),
-            ("Press S: Shop", (200, 200, 0), 110)
+            (f"Ship: {self.player.ship_name}", self.player.ship_color, 110),
+            ("Press S: Shop", (200, 200, 0), 135)
         ]
         for text, color, y in texts:
             self.screen.blit(self.small_font.render(text, True, color), (10, y))
@@ -583,35 +697,68 @@ class GeometricAsteroids:
         overlay.fill((6, 6, 8, 200))
         self.screen.blit(overlay, (0, 0))
         
-        box_w, box_h = 540, 400
+        box_w, box_h = 600, 500
         box_x, box_y = WIDTH // 2 - box_w // 2, HEIGHT // 2 - box_h // 2
         pygame.draw.rect(self.screen, (20, 20, 30), (box_x, box_y, box_w, box_h))
         pygame.draw.rect(self.screen, CYAN, (box_x, box_y, box_w, box_h), 3)
         
-        title = self.font.render("SHOP", True, WHITE)
+        title = self.font.render("SHIP SHOP", True, WHITE)
         coins = self.small_font.render(f"Coins: {self.coins}", True, YELLOW)
+        current = self.small_font.render(f"Current: {self.player.ship_name}", True, self.player.ship_color)
+        
         self.screen.blit(title, (WIDTH // 2 - title.get_width() // 2, box_y + 12))
         self.screen.blit(coins, (WIDTH // 2 - coins.get_width() // 2, box_y + 50))
+        self.screen.blit(current, (WIDTH // 2 - current.get_width() // 2, box_y + 75))
         
         self.shop_rects.clear()
         gap = 16
-        cols = 2
-        card_w = (box_w - gap * 3) // 2
-        card_h = 100
+        card_w = box_w - gap * 2
+        card_h = 85
         
         for idx, item in enumerate(self.shop_items):
-            r, c = idx // cols, idx % cols
-            rx, ry = box_x + gap + c * (card_w + gap), box_y + 100 + r * (card_h + gap)
-            rect = pygame.Rect(rx, ry, card_w, card_h)
-            pygame.draw.rect(self.screen, (14, 14, 18), rect)
-            pygame.draw.rect(self.screen, GREEN if self.coins >= item['cost'] else WHITE, rect, 2)
+            ry = box_y + 110 + idx * (card_h + gap)
+            rect = pygame.Rect(box_x + gap, ry, card_w, card_h)
             
-            self.screen.blit(self.small_font.render(item['name'], True, WHITE), (rx + 8, ry + 8))
-            self.screen.blit(self.small_font.render(item['desc'], True, (180, 180, 180)), (rx + 8, ry + 36))
-            self.screen.blit(self.small_font.render(f"Cost: {item['cost']}", True, YELLOW), (rx + 8, ry + 64))
+            owned = item['id'] in self.owned_ships
+            equipped = item['id'] == self.player.ship_type
+            
+            if equipped:
+                bg_color = (30, 60, 80)
+                border_color = CYAN
+            elif owned:
+                bg_color = (20, 50, 20)
+                border_color = GREEN
+            elif self.coins >= item['cost']:
+                bg_color = (14, 14, 18)
+                border_color = YELLOW
+            else:
+                bg_color = (14, 14, 18)
+                border_color = (80, 80, 80)
+            
+            pygame.draw.rect(self.screen, bg_color, rect)
+            pygame.draw.rect(self.screen, border_color, rect, 2)
+            
+            name = self.small_font.render(item['name'], True, WHITE)
+            desc = self.small_font.render(item['desc'], True, (180, 180, 180))
+            stats = self.small_font.render(item['stats'], True, (150, 150, 200))
+            
+            self.screen.blit(name, (rect.x + 8, rect.y + 8))
+            self.screen.blit(desc, (rect.x + 8, rect.y + 32))
+            self.screen.blit(stats, (rect.x + 8, rect.y + 54))
+            
+            if equipped:
+                status = self.small_font.render("EQUIPPED", True, CYAN)
+                self.screen.blit(status, (rect.x + card_w - 100, rect.y + 28))
+            elif owned:
+                status = self.small_font.render("Click to Equip", True, GREEN)
+                self.screen.blit(status, (rect.x + card_w - 120, rect.y + 28))
+            else:
+                cost = self.small_font.render(f"Cost: {item['cost']}", True, YELLOW)
+                self.screen.blit(cost, (rect.x + card_w - 110, rect.y + 28))
+            
             self.shop_rects.append((rect, item))
         
-        inst = self.small_font.render("Click item to buy | Press S to close", True, (180, 180, 180))
+        inst = self.small_font.render("Click ship to buy/equip | Press S to close", True, (180, 180, 180))
         self.screen.blit(inst, (WIDTH // 2 - inst.get_width() // 2, box_y + box_h - 28))
     
     def draw_game_over(self):
@@ -646,17 +793,21 @@ class GeometricAsteroids:
                     if event.button == 1 and self.shop_open:
                         mx, my = event.pos
                         for rect, item in self.shop_rects:
-                            if rect.collidepoint(mx, my) and self.coins >= item['cost']:
-                                self.coins -= item['cost']
-                                upgrades = {
-                                    'speed': lambda: setattr(self.player, 'max_speed', self.player.max_speed + 1),
-                                    'damage': lambda: setattr(self.player, 'damage', self.player.damage + 1),
-                                    'firerate': lambda: setattr(self.player, 'default_shoot_delay', 
-                                                               max(1, self.player.default_shoot_delay - 1)),
-                                    'life': lambda: setattr(self.player, 'lives', self.player.lives + 1)
-                                }
-                                upgrades[item['id']]()
-                                self.owned_upgrades[item['id']] = self.owned_upgrades.get(item['id'], 0) + 1
+                            if rect.collidepoint(mx, my):
+                                ship_id = item['id']
+                                
+                                # If owned, equip it
+                                if ship_id in self.owned_ships:
+                                    old_lives = self.player.lives
+                                    self.player = Player(ship_id)
+                                    self.player.lives = old_lives
+                                # If not owned but can afford, buy and equip
+                                elif self.coins >= item['cost']:
+                                    self.coins -= item['cost']
+                                    self.owned_ships.append(ship_id)
+                                    old_lives = self.player.lives
+                                    self.player = Player(ship_id)
+                                    self.player.lives = old_lives
                                 break
             
             if not self.game_over:
