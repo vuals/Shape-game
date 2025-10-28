@@ -209,45 +209,147 @@ class Bullet:
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
 
 class GeometricEnemy:
-    def __init__(self, x, y, shape_type, size):
+    def __init__(self, x, y, shape_type, size, role=None):
+        # role: None or 'chaser' (default), 'dasher', 'turret', 'swarm', 'shield'
         self.x, self.y = x, y
         self.shape_type = shape_type
         self.size = size
         self.angle = random.uniform(0, 360)
         self.rotation_speed = random.uniform(-2, 2)
-        
+
         configs = {
             'triangle': (3, RED, 2.5, 1, 5),
             'square': (4, ORANGE, 1.5, 2, 10),
             'pentagon': (5, YELLOW, 1, 3, 20),
             'hexagon': (6, GREEN, 0.8, 4, 35)
         }
-        self.sides, self.color, self.speed, self.health, self.coin_value = configs[shape_type]
-        
+        self.sides, self.color, base_speed, base_health, self.coin_value = configs[shape_type]
+
+        # Role determines behavior tweaks
+        self.role = role or 'chaser'
+        # behavioral modifiers
+        if self.role == 'chaser':
+            self.speed = base_speed
+            self.health = base_health
+        elif self.role == 'swarm':
+            self.speed = max(1.8, base_speed + 1.2)
+            self.health = max(1, base_health)
+            # swarm noise for zig-zag
+            self.zig_timer = random.randint(10, 30)
+        elif self.role == 'dasher':
+            self.speed = base_speed
+            self.health = max(1, base_health + 1)
+            self.dash_timer = random.randint(40, 100)
+            self.is_dashing = False
+            self.dash_duration = 12
+            self.dash_speed = self.speed * 3.5
+        elif self.role == 'turret':
+            self.speed = 0.0
+            self.health = max(1, base_health + 1)
+            self.shoot_timer = random.randint(40, 80)
+            self.shoot_interval = max(30, 70 - (self.size // 10))
+        elif self.role == 'shield':
+            self.speed = max(0.6, base_speed - 0.4)
+            self.health = max(3, base_health + 3)
+            self.shield_active = True
+            self.shield_timer = random.randint(80, 160)
+        else:
+            self.speed = base_speed
+            self.health = base_health
+
         angle_rad = random.uniform(0, 2 * math.pi)
         self.vel_x = math.cos(angle_rad) * self.speed
         self.vel_y = math.sin(angle_rad) * self.speed
         
     def update(self, player_x, player_y):
+        """
+        Update enemy state. Returns a list of Bullets this enemy fired (may be empty).
+        """
+        spawned = []
         dx, dy = player_x - self.x, player_y - self.y
         dist = math.sqrt(dx**2 + dy**2)
-        if dist > 0:
-            self.vel_x += (dx / dist) * 0.05
-            self.vel_y += (dy / dist) * 0.05
-        
-        speed = math.sqrt(self.vel_x**2 + self.vel_y**2)
-        if speed > self.speed:
-            self.vel_x = (self.vel_x / speed) * self.speed
-            self.vel_y = (self.vel_y / speed) * self.speed
-        
-        self.x += self.vel_x
-        self.y += self.vel_y
-        self.angle += self.rotation_speed
-        
+
+        # Behavior by role
+        if self.role == 'turret':
+            # stationary turret rotates slowly and shoots toward player periodically
+            self.angle += self.rotation_speed * 0.3
+            self.shoot_timer -= 1
+            if self.shoot_timer <= 0:
+                self.shoot_timer = self.shoot_interval
+                if dist > 0:
+                    angle_to_player = math.degrees(math.atan2(dy, dx))
+                    # fire 1-2 bullets
+                    for _ in range(random.randint(1, 2)):
+                        spawned.append(Bullet(self.x, self.y, angle_to_player + random.uniform(-8, 8), speed=7, owner='boss', damage=1))
+
+        else:
+            # movement-based roles
+            if dist > 0:
+                # base attraction for chasers/swarm/dashers/shield
+                if self.role == 'swarm':
+                    # zig-zag movement
+                    if hasattr(self, 'zig_timer'):
+                        self.zig_timer -= 1
+                        wiggle = math.sin(pygame.time.get_ticks() / 100 + self.zig_timer) * 0.6
+                        self.vel_x += ((dx / dist) * 0.06) + math.cos(wiggle) * 0.06
+                        self.vel_y += ((dy / dist) * 0.06) + math.sin(wiggle) * 0.06
+                elif self.role == 'dasher':
+                    # dash occasionally: build up then burst
+                    self.dash_timer -= 1
+                    if self.is_dashing:
+                        # continue dash in same direction (velocity already set)
+                        pass
+                    else:
+                        # minor attraction
+                        self.vel_x += (dx / dist) * 0.03
+                        self.vel_y += (dy / dist) * 0.03
+
+                    if self.dash_timer <= 0 and not self.is_dashing:
+                        # start dash
+                        self.is_dashing = True
+                        self.dash_timer = random.randint(80, 160)
+                        # set dash velocity toward player
+                        rad = math.atan2(dy, dx)
+                        self.vel_x = math.cos(rad) * self.dash_speed
+                        self.vel_y = math.sin(rad) * self.dash_speed
+                        self._dash_ticks = self.dash_duration
+
+                    if getattr(self, '_dash_ticks', 0) > 0:
+                        self._dash_ticks -= 1
+                        if self._dash_ticks <= 0:
+                            self.is_dashing = False
+                elif self.role == 'shield':
+                    # slow approach; toggles shield occasionally
+                    self.shield_timer -= 1
+                    if self.shield_timer <= 0:
+                        self.shield_active = not self.shield_active
+                        self.shield_timer = random.randint(80, 160)
+                    # gentle movement
+                    self.vel_x += (dx / dist) * 0.02
+                    self.vel_y += (dy / dist) * 0.02
+                else:
+                    # default chaser
+                    self.vel_x += (dx / dist) * 0.05
+                    self.vel_y += (dy / dist) * 0.05
+
+            # Limit speed for non-dashing states
+            speed = math.sqrt(self.vel_x**2 + self.vel_y**2)
+            limit = self.dash_speed if getattr(self, 'is_dashing', False) else self.speed
+            if speed > limit:
+                self.vel_x = (self.vel_x / speed) * limit
+                self.vel_y = (self.vel_y / speed) * limit
+
+            self.x += self.vel_x
+            self.y += self.vel_y
+            self.angle += self.rotation_speed
+
+        # Wrap around
         if self.x < -50: self.x = WIDTH + 50
         elif self.x > WIDTH + 50: self.x = -50
         if self.y < -50: self.y = HEIGHT + 50
         elif self.y > HEIGHT + 50: self.y = -50
+
+        return spawned
     
     def hit(self, damage=1):
         self.health -= damage
@@ -269,12 +371,31 @@ class GeometricEnemy:
         points = [(self.x + math.cos(math.radians(self.angle + (360 / self.sides) * i)) * self.size,
                    self.y + math.sin(math.radians(self.angle + (360 / self.sides) * i)) * self.size)
                   for i in range(self.sides)]
-        pygame.draw.polygon(screen, self.color, points, 3)
+        # visual cues for roles
+        draw_color = self.color
+        border = 3 if self.role == 'tank' else 3
+        if self.role == 'turret':
+            # turret: darker body with a barrel
+            pygame.draw.polygon(screen, (30, 30, 50), points)
+            pygame.draw.polygon(screen, draw_color, points, 2)
+            # barrel towards angle
+            barrel_x = self.x + math.cos(math.radians(self.angle)) * (self.size + 6)
+            barrel_y = self.y + math.sin(math.radians(self.angle)) * (self.size + 6)
+            pygame.draw.line(screen, draw_color, (self.x, self.y), (barrel_x, barrel_y), 3)
+        else:
+            pygame.draw.polygon(screen, draw_color, points, 3)
         
         inner_points = [(self.x + math.cos(math.radians(self.angle + (360 / self.sides) * i)) * (self.size * 0.7),
                         self.y + math.sin(math.radians(self.angle + (360 / self.sides) * i)) * (self.size * 0.7))
                        for i in range(self.sides)]
-        pygame.draw.polygon(screen, self.color, inner_points, 1)
+        pygame.draw.polygon(screen, draw_color, inner_points, 1)
+
+        # role overlays
+        if self.role == 'dasher' and getattr(self, 'is_dashing', False):
+            # glow while dashing
+            pygame.draw.circle(screen, (255, 180, 80), (int(self.x), int(self.y)), int(self.size*0.9), 2)
+        if self.role == 'shield' and getattr(self, 'shield_active', False):
+            pygame.draw.circle(screen, (120, 180, 255), (int(self.x), int(self.y)), int(self.size*1.2), 2)
 
 class BossEnemy:
     def __init__(self, x, y, boss_index):
