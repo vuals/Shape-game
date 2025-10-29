@@ -210,7 +210,7 @@ class Bullet:
 
 class GeometricEnemy:
     def __init__(self, x, y, shape_type, size, role=None):
-        # role: None or 'chaser' (default), 'dasher', 'turret', 'swarm', 'shield'
+        # role: None or 'chaser' (default), 'dasher', 'swarm', 'shield'
         self.x, self.y = x, y
         self.shape_type = shape_type
         self.size = size
@@ -243,11 +243,7 @@ class GeometricEnemy:
             self.is_dashing = False
             self.dash_duration = 12
             self.dash_speed = self.speed * 3.5
-        elif self.role == 'turret':
-            self.speed = 0.0
-            self.health = max(1, base_health + 1)
-            self.shoot_timer = random.randint(40, 80)
-            self.shoot_interval = max(30, 70 - (self.size // 10))
+
         elif self.role == 'shield':
             self.speed = max(0.6, base_speed - 0.4)
             self.health = max(3, base_health + 3)
@@ -267,81 +263,67 @@ class GeometricEnemy:
         """
         spawned = []
         dx, dy = player_x - self.x, player_y - self.y
-        dist = math.sqrt(dx**2 + dy**2)
+        dist = math.hypot(dx, dy)
 
-        # Behavior by role
-        if self.role == 'turret':
-            # stationary turret rotates slowly and shoots toward player periodically
-            self.angle += self.rotation_speed * 0.3
-            self.shoot_timer -= 1
-            if self.shoot_timer <= 0:
-                self.shoot_timer = self.shoot_interval
-                if dist > 0:
-                    angle_to_player = math.degrees(math.atan2(dy, dx))
-                    # fire 1-2 bullets
-                    for _ in range(random.randint(1, 2)):
-                        spawned.append(Bullet(self.x, self.y, angle_to_player + random.uniform(-8, 8), speed=7, owner='boss', damage=1))
-
-        else:
-            # movement-based roles
-            if dist > 0:
-                # base attraction for chasers/swarm/dashers/shield
-                if self.role == 'swarm':
-                    # zig-zag movement
-                    if hasattr(self, 'zig_timer'):
-                        self.zig_timer -= 1
-                        wiggle = math.sin(pygame.time.get_ticks() / 100 + self.zig_timer) * 0.6
-                        self.vel_x += ((dx / dist) * 0.06) + math.cos(wiggle) * 0.06
-                        self.vel_y += ((dy / dist) * 0.06) + math.sin(wiggle) * 0.06
-                elif self.role == 'dasher':
-                    # dash occasionally: build up then burst
-                    self.dash_timer -= 1
-                    if self.is_dashing:
-                        # continue dash in same direction (velocity already set)
-                        pass
-                    else:
-                        # minor attraction
-                        self.vel_x += (dx / dist) * 0.03
-                        self.vel_y += (dy / dist) * 0.03
-
-                    if self.dash_timer <= 0 and not self.is_dashing:
-                        # start dash
-                        self.is_dashing = True
-                        self.dash_timer = random.randint(80, 160)
-                        # set dash velocity toward player
-                        rad = math.atan2(dy, dx)
-                        self.vel_x = math.cos(rad) * self.dash_speed
-                        self.vel_y = math.sin(rad) * self.dash_speed
-                        self._dash_ticks = self.dash_duration
-
-                    if getattr(self, '_dash_ticks', 0) > 0:
-                        self._dash_ticks -= 1
-                        if self._dash_ticks <= 0:
-                            self.is_dashing = False
-                elif self.role == 'shield':
-                    # slow approach; toggles shield occasionally
-                    self.shield_timer -= 1
-                    if self.shield_timer <= 0:
-                        self.shield_active = not self.shield_active
-                        self.shield_timer = random.randint(80, 160)
-                    # gentle movement
-                    self.vel_x += (dx / dist) * 0.02
-                    self.vel_y += (dy / dist) * 0.02
+        # Behavior by role (movement + occasional firing)
+        if dist > 0:
+            # SWARM: zig-zag while moving toward player
+            if self.role == 'swarm':
+                if hasattr(self, 'zig_timer'):
+                    self.zig_timer -= 1
+                    wiggle = math.sin(pygame.time.get_ticks() / 100 + self.zig_timer) * 0.6
+                    self.vel_x += (dx / dist) * 0.06 + math.cos(wiggle) * 0.06
+                    self.vel_y += (dy / dist) * 0.06 + math.sin(wiggle) * 0.06
                 else:
-                    # default chaser
-                    self.vel_x += (dx / dist) * 0.05
-                    self.vel_y += (dy / dist) * 0.05
+                    # fallback to gentle homing
+                    self.vel_x += (dx / dist) * 0.06
+                    self.vel_y += (dy / dist) * 0.06
 
-            # Limit speed for non-dashing states
-            speed = math.sqrt(self.vel_x**2 + self.vel_y**2)
-            limit = self.dash_speed if getattr(self, 'is_dashing', False) else self.speed
-            if speed > limit:
-                self.vel_x = (self.vel_x / speed) * limit
-                self.vel_y = (self.vel_y / speed) * limit
+            # DASHER: build small attraction, occasionally perform a high-speed dash toward player
+            elif self.role == 'dasher':
+                # decrement dash timer and handle dashing state
+                self.dash_timer -= 1
+                if not getattr(self, 'is_dashing', False):
+                    # small homing while charging
+                    self.vel_x += (dx / dist) * 0.04
+                    self.vel_y += (dy / dist) * 0.04
+                if self.dash_timer <= 0 and not getattr(self, 'is_dashing', False):
+                    self.is_dashing = True
+                    self.dash_timer = random.randint(80, 160)
+                    rad = math.atan2(dy, dx)
+                    self.vel_x = math.cos(rad) * self.dash_speed
+                    self.vel_y = math.sin(rad) * self.dash_speed
+                    self._dash_ticks = self.dash_duration
+                if getattr(self, '_dash_ticks', 0) > 0:
+                    self._dash_ticks -= 1
+                    if self._dash_ticks <= 0:
+                        self.is_dashing = False
 
-            self.x += self.vel_x
-            self.y += self.vel_y
-            self.angle += self.rotation_speed
+            # SHIELD: slow approach, toggle shield occasionally
+            elif self.role == 'shield':
+                self.shield_timer -= 1
+                if self.shield_timer <= 0:
+                    self.shield_active = not self.shield_active
+                    self.shield_timer = random.randint(80, 160)
+                self.vel_x += (dx / dist) * 0.03
+                self.vel_y += (dy / dist) * 0.03
+
+            # CHASER / default: straightforward homing
+            else:
+                self.vel_x += (dx / dist) * 0.12
+                self.vel_y += (dy / dist) * 0.12
+
+        # Limit speed for non-dashing states
+        speed = math.hypot(self.vel_x, self.vel_y)
+        limit = self.dash_speed if getattr(self, 'is_dashing', False) else self.speed
+        if speed > limit and limit > 0:
+            self.vel_x = (self.vel_x / speed) * limit
+            self.vel_y = (self.vel_y / speed) * limit
+
+        # Apply movement
+        self.x += self.vel_x
+        self.y += self.vel_y
+        self.angle += self.rotation_speed
 
         # Wrap around
         if self.x < -50: self.x = WIDTH + 50
@@ -374,16 +356,7 @@ class GeometricEnemy:
         # visual cues for roles
         draw_color = self.color
         border = 3 if self.role == 'tank' else 3
-        if self.role == 'turret':
-            # turret: darker body with a barrel
-            pygame.draw.polygon(screen, (30, 30, 50), points)
-            pygame.draw.polygon(screen, draw_color, points, 2)
-            # barrel towards angle
-            barrel_x = self.x + math.cos(math.radians(self.angle)) * (self.size + 6)
-            barrel_y = self.y + math.sin(math.radians(self.angle)) * (self.size + 6)
-            pygame.draw.line(screen, draw_color, (self.x, self.y), (barrel_x, barrel_y), 3)
-        else:
-            pygame.draw.polygon(screen, draw_color, points, 3)
+        pygame.draw.polygon(screen, draw_color, points, 3)
         
         inner_points = [(self.x + math.cos(math.radians(self.angle + (360 / self.sides) * i)) * (self.size * 0.7),
                         self.y + math.sin(math.radians(self.angle + (360 / self.sides) * i)) * (self.size * 0.7))
@@ -593,18 +566,18 @@ class GeometricAsteroids:
         max_enemies = min(6 + self.wave * 2, 30)
 
         # role costs and progressive availability
-        role_cost = {'chaser': 1, 'swarm': 1, 'dasher': 2, 'turret': 2, 'shield': 3}
+        role_cost = {'chaser': 1, 'swarm': 1, 'dasher': 2, 'shield': 3}
 
         def role_weights_for_wave(w):
             # Early waves: mostly chasers and swarmers
             if w <= 2:
-                return {'chaser': 70, 'swarm': 30, 'dasher': 0, 'turret': 0, 'shield': 0}
+                return {'chaser': 70, 'swarm': 30, 'dasher': 0, 'shield': 0}
             if w <= 4:
-                return {'chaser': 50, 'swarm': 25, 'dasher': 20, 'turret': 5, 'shield': 0}
+                return {'chaser': 50, 'swarm': 25, 'dasher': 25, 'shield': 0}
             if w <= 7:
-                return {'chaser': 35, 'swarm': 20, 'dasher': 25, 'turret': 15, 'shield': 5}
-            # later waves: more mixed with turrets and shields
-            return {'chaser': 25, 'swarm': 15, 'dasher': 25, 'turret': 20, 'shield': 15}
+                return {'chaser': 35, 'swarm': 25, 'dasher': 25, 'shield': 15}
+            # later waves: more mixed with shields
+            return {'chaser': 30, 'swarm': 20, 'dasher': 30, 'shield': 20}
 
         weights = role_weights_for_wave(self.wave)
         roles = list(weights.keys())
